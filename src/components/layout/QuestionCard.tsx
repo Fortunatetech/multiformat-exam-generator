@@ -26,13 +26,11 @@ export default function QuestionCard({
   showSource = true,
   className,
 }: QuestionCardProps) {
-  // local editable copy
   const [local, setLocal] = useState<QuizQuestion>(question);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  // sync when parent question changes (e.g., new generation)
   useEffect(() => setLocal(question), [question]);
 
   const isMCQ = local.type === "mcq";
@@ -57,7 +55,6 @@ export default function QuestionCard({
   const removeChoice = useCallback((idx: number) => {
     setLocal((prev) => {
       const choices = prev.choices ? prev.choices.filter((_, i) => i !== idx) : [];
-      // if answer was an index or string ensure answer stays valid
       return { ...prev, choices };
     });
   }, []);
@@ -73,25 +70,18 @@ export default function QuestionCard({
       await onSave(local);
       setStatusMessage("Saved");
       setEditing(false);
-    } catch (err: any) {
-      setStatusMessage(err?.message ?? "Save failed");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatusMessage(msg || "Save failed");
     } finally {
       setSaving(false);
       setTimeout(() => setStatusMessage(null), 2000);
     }
   }, [local, onSave]);
 
-  const handleAccept = useCallback(() => {
-    onAccept?.(local.id);
-  }, [local.id, onAccept]);
-
-  const handleReject = useCallback(() => {
-    onReject?.(local.id);
-  }, [local.id, onReject]);
-
-  const handleRegenerate = useCallback(() => {
-    onRegenerate?.(local.id);
-  }, [local.id, onRegenerate]);
+  const handleAccept = useCallback(() => onAccept?.(local.id), [local.id, onAccept]);
+  const handleReject = useCallback(() => onReject?.(local.id), [local.id, onReject]);
+  const handleRegenerate = useCallback(() => onRegenerate?.(local.id), [local.id, onRegenerate]);
 
   const renderChoices = useMemo(() => {
     if (!local.choices || local.choices.length === 0) return null;
@@ -124,9 +114,14 @@ export default function QuestionCard({
             </div>
           </li>
         ))}
+        {editing && (
+          <li>
+            <button onClick={addChoice} className="text-sm text-slate-700 hover:underline" type="button">+ Add option</button>
+          </li>
+        )}
       </ul>
     );
-  }, [local.choices, editing, removeChoice, updateChoice]);
+  }, [local.choices, editing, removeChoice, updateChoice, addChoice]);
 
   return (
     <article className={cn("bg-white border rounded p-4 shadow-sm", className)}>
@@ -158,7 +153,6 @@ export default function QuestionCard({
             </div>
           </div>
 
-          {/* Choices or TF / FIB */}
           <div>
             {isMCQ && renderChoices}
             {isTF && (
@@ -191,7 +185,6 @@ export default function QuestionCard({
                 )}
               </div>
             )}
-            {/* Theory / FIB show explanation edit */}
             {local.explanation && (
               <div className="mt-3 text-sm text-slate-600">
                 <label className="block text-xs text-slate-500 mb-1">Explanation</label>
@@ -210,7 +203,6 @@ export default function QuestionCard({
           </div>
         </div>
 
-        {/* Action column */}
         <div className="flex-shrink-0 ml-3 flex flex-col items-end gap-3">
           {editing ? (
             <>
@@ -232,35 +224,22 @@ export default function QuestionCard({
               </button>
             </>
           ) : (
-            <>
-              <div className="flex flex-col gap-2">
-                <button onClick={() => setEditing(true)} className="px-3 py-1 rounded border text-sm">
-                  Edit
-                </button>
-                <button onClick={handleRegenerate} className="px-3 py-1 rounded border text-sm">
-                  Regenerate
-                </button>
-                <button onClick={handleAccept} className="px-3 py-1 rounded bg-emerald-600 text-white text-sm">
-                  Accept
-                </button>
-                <button onClick={handleReject} className="px-3 py-1 rounded border text-sm text-rose-600">
-                  Reject
-                </button>
-              </div>
-            </>
+            <div className="flex flex-col gap-2">
+              <button onClick={() => setEditing(true)} className="px-3 py-1 rounded border text-sm">Edit</button>
+              <button onClick={handleRegenerate} className="px-3 py-1 rounded border text-sm">Regenerate</button>
+              <button onClick={handleAccept} className="px-3 py-1 rounded bg-emerald-600 text-white text-sm">Accept</button>
+              <button onClick={handleReject} className="px-3 py-1 rounded border text-sm text-rose-600">Reject</button>
+            </div>
           )}
         </div>
       </div>
 
-      {/* optional status line */}
       <div className="mt-3 flex items-center justify-between">
         <div className="text-xs text-slate-500">{statusMessage}</div>
         {showSource && question.source && (
-  <div className="text-xs text-slate-400">Source: {question.source.slice(0, 60)}</div>
-)}
-
+          <div className="text-xs text-slate-400">Source: {question.source.slice(0, 60)}</div>
+        )}
       </div>
-    </article>   
+    </article>
   );
 }
-

@@ -1,38 +1,23 @@
 // src/stores/useAppStore.ts
-/**
- * Zustand app store for Multiformat frontend.
- * - Holds current quiz, quizzes list (future), selected question id.
- * - Provides helpers: setQuiz, updateQuestion, accept/reject, bulk ops, export JSON.
- *
- * Notes:
- * - Uses zustand. Install with: npm install zustand
- * - Optionally add persist middleware by uncommenting the persist wrapper below
- *   and installing zustand/middleware.
- */
-
 import type { Quiz, QuizQuestion } from "@/lib/api";
 import { create } from "zustand";
 
 type AppState = {
   currentQuiz: Quiz | null;
-  quizzes: Quiz[]; // future multi-quiz support
+  quizzes: Quiz[];
   selectedQuestionId: string | null;
 
-  // setters
   setQuiz: (quiz: Quiz | null) => void;
   clearQuiz: () => void;
 
-  // question operations
   updateQuestion: (id: string, patch: Partial<QuizQuestion>) => void;
   setSelectedQuestion: (id: string | null) => void;
   acceptQuestion: (id: string) => void;
   rejectQuestion: (id: string) => void;
 
-  // bulk operations
   acceptAll: () => void;
   rejectAll: () => void;
 
-  // helpers
   exportCurrentQuizJSON: () => string | null;
 };
 
@@ -62,12 +47,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSelectedQuestion: (id) => set({ selectedQuestionId: id }),
 
   acceptQuestion: (id) => {
-    // we'll store acceptance as a `status` field on the question for UI only
-    get().updateQuestion(id, { ...(undefined as unknown as Partial<QuizQuestion>), status: "accepted" } as any);
+    get().updateQuestion(id, { status: "accepted" });
   },
 
   rejectQuestion: (id) => {
-    get().updateQuestion(id, { ...(undefined as unknown as Partial<QuizQuestion>), status: "rejected" } as any);
+    get().updateQuestion(id, { status: "rejected" });
   },
 
   acceptAll: () => {
@@ -91,21 +75,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!q) return null;
     try {
       return JSON.stringify(q, null, 2);
-    } catch (e) {
+    } catch {
       return null;
     }
   },
 }));
-
-/**
- * Optional: session persistence
- *
- * If you want the store to survive refresh during prototyping, you can wrap create() with persist:
- *
- * import { persist } from "zustand/middleware";
- * export const useAppStore = create<AppState>()(
- *   persist((set, get) => ({ ...state }), { name: "multiformat-store" })
- * );
- *
- * Remember to install zustand/middleware if you use persist.
- */

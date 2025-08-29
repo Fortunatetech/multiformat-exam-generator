@@ -3,19 +3,15 @@
 
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
+import type { Quiz, QuizQuestion } from "@/lib/api";
 import { useAppStore } from "@/stores/useAppStore";
-
-import { cn } from "@/lib/utils";
 import QuestionCard from "@/components/layout/QuestionCard";
+import { cn } from "@/lib/utils";
+import ExportModal from "@/components/layout/ExportModal";
+import SourcePreview from "@/components/layout/SourcePreview";
 
 /**
- * Editor page
- * - Renders a list of QuestionCard components for the current quiz
- * - Provides selection, bulk accept/reject and a small Export modal (JSON)
- *
- * Assumptions:
- * - QuestionCard exists at src/components/QuestionCard.tsx
- * - useAppStore provides currentQuiz + actions
+ * Editor page (cleaned types & hooks)
  */
 
 export default function EditorPage() {
@@ -31,45 +27,88 @@ export default function EditorPage() {
 
   const [exportOpen, setExportOpen] = useState(false);
 
-  const questions = currentQuiz?.questions ?? [];
+  // keep dependencies stable by watching `currentQuiz` reference
+  const questions = useMemo<QuizQuestion[]>(
+    () => (currentQuiz ? currentQuiz.questions : []),
+    [currentQuiz]
+  );
 
-  const selectedQuestion = useMemo(
+  const selectedQuestion = useMemo<QuizQuestion | null>(
     () => questions.find((q) => q.id === selectedQuestionId) ?? questions[0] ?? null,
     [questions, selectedQuestionId]
   );
 
-  // Handle QuestionCard callbacks
-  const handleSave = async (q: any) => {
+  // Save handler typed correctly
+  const handleSave = async (q: QuizQuestion) => {
     updateQuestion(q.id, q);
   };
 
-  const handleAccept = (id: string) => {
-    acceptQuestion(id);
-  };
-
-  const handleReject = (id: string) => {
-    rejectQuestion(id);
-  };
+  const handleAccept = (id: string) => acceptQuestion(id);
+  const handleReject = (id: string) => rejectQuestion(id);
 
   const handleRegenerate = (id: string) => {
-    // For now, regenerate is a placeholder: mark as 'regenerated' then update prompt
-    updateQuestion(id, { prompt: "[Regenerated variant] " + (questions.find((x) => x.id === id)?.prompt ?? "") });
+    const q = questions.find((x) => x.id === id);
+    updateQuestion(id, { prompt: "[Regenerated variant] " + (q?.prompt ?? ""), status: "regenerated" });
   };
 
-  const handleExportGenerate = () => {
+  const handleExportGenerate = async (format: "json" | "txt" | "pdf") => {
     const json = exportCurrentQuizJSON();
-    if (!json) return;
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    // auto-download
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${currentQuiz?.quizId ?? "quiz"}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    if (!json || !currentQuiz) return;
+
+    if (format === "json") {
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${currentQuiz.quizId ?? "quiz"}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } else if (format === "txt") {
+      // parse to typed Quiz
+      const parsed = JSON.parse(json) as Quiz;
+      const lines: string[] = [];
+      lines.push(`${parsed.title ?? "Quiz"}\nSubject: ${parsed.subject ?? "-"}`);
+      parsed.questions.forEach((qq, i) => {
+        lines.push(`${i + 1}. ${qq.prompt}`);
+        if (qq.choices) qq.choices.forEach((c, idx) => lines.push(`   ${String.fromCharCode(65 + idx)}. ${c}`));
+        if (qq.answer !== undefined) lines.push(`   Answer: ${Array.isArray(qq.answer) ? qq.answer.join(", ") : qq.answer}`);
+        lines.push("");
+      });
+      const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${currentQuiz.quizId ?? "quiz"}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } else {
+      // PDF mock
+      const blob = new Blob([json], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${currentQuiz.quizId ?? "quiz"}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
     setExportOpen(false);
+  };
+
+  const handleRegenerateFromAnchor = (anchorIndex: number) => {
+    if (!selectedQuestion) return;
+    const newPrompt = `${selectedQuestion.prompt} (regenerated from anchor #${anchorIndex + 1})`;
+    updateQuestion(selectedQuestion.id, { prompt: newPrompt, status: "regenerated" });
+  };
+
+  const handleCopyToPrompt = (text: string) => {
+    if (!selectedQuestion) return;
+    updateQuestion(selectedQuestion.id, { prompt: text });
   };
 
   if (!currentQuiz) {
@@ -101,33 +140,15 @@ export default function EditorPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => { acceptAll(); }}
-              className="px-3 py-2 rounded border text-sm"
-              type="button"
-            >
-              Accept all
-            </button>
-            <button
-              onClick={() => { rejectAll(); }}
-              className="px-3 py-2 rounded border text-sm"
-              type="button"
-            >
-              Reject all
-            </button>
-            <button
-              onClick={() => setExportOpen(true)}
-              className="px-3 py-2 rounded bg-emerald-600 text-white text-sm"
-              type="button"
-            >
-              Export
-            </button>
+            <button onClick={() => acceptAll()} className="px-3 py-2 rounded border text-sm">Accept all</button>
+            <button onClick={() => rejectAll()} className="px-3 py-2 rounded border text-sm">Reject all</button>
+            <button onClick={() => setExportOpen(true)} className="px-3 py-2 rounded bg-emerald-600 text-white text-sm">Export</button>
           </div>
         </div>
 
         {/* Two column layout: questions list + right rail */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left: question list (span 2 cols on large screens) */}
+          {/* Left: question list */}
           <div className="lg:col-span-2 space-y-4">
             {questions.map((q, idx) => {
               const isSelected = selectedQuestionId === q.id;
@@ -166,12 +187,8 @@ export default function EditorPage() {
                       </div>
                     )}
                     <div className="mt-3 flex gap-2">
-                      <button onClick={() => handleAccept(selectedQuestion.id)} className="px-3 py-1 rounded bg-emerald-600 text-white text-sm">
-                        Accept
-                      </button>
-                      <button onClick={() => handleReject(selectedQuestion.id)} className="px-3 py-1 rounded border text-sm">
-                        Reject
-                      </button>
+                      <button onClick={() => handleAccept(selectedQuestion.id)} className="px-3 py-1 rounded bg-emerald-600 text-white text-sm">Accept</button>
+                      <button onClick={() => handleReject(selectedQuestion.id)} className="px-3 py-1 rounded border text-sm">Reject</button>
                     </div>
                   </div>
                 </>
@@ -180,18 +197,12 @@ export default function EditorPage() {
               )}
             </div>
 
-            {/* Source preview */}
-            <div className="bg-white border rounded p-4">
-              <h3 className="text-sm font-medium">Source preview</h3>
-              <div className="mt-3 text-sm text-slate-600">
-                {/* If your question has a `source` or `sourceAnchors`, render it here */}
-                {selectedQuestion && (selectedQuestion as any).source ? (
-                  <div className="whitespace-pre-wrap text-sm text-slate-800">{(selectedQuestion as any).source}</div>
-                ) : (
-                  <div className="text-sm text-slate-500">Source not available for this demo question.</div>
-                )}
-              </div>
-            </div>
+            {/* SourcePreview component */}
+            <SourcePreview
+              question={selectedQuestion}
+              onRegenerateFromAnchor={handleRegenerateFromAnchor}
+              onCopyToPrompt={handleCopyToPrompt}
+            />
 
             {/* Quiz meta */}
             <div className="bg-white border rounded p-4">
@@ -205,24 +216,12 @@ export default function EditorPage() {
         </div>
       </div>
 
-      {/* Export modal (simple JSON export) */}
-      {exportOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-        >
-          <div className="w-full max-w-lg bg-white rounded shadow p-6">
-            <h2 className="text-lg font-medium">Export quiz</h2>
-            <p className="mt-2 text-sm text-slate-600">Download the current quiz as JSON for now (demo).</p>
-
-            <div className="mt-4 flex items-center gap-3">
-              <button onClick={handleExportGenerate} className="px-4 py-2 rounded bg-emerald-600 text-white">Generate & Download</button>
-              <button onClick={() => setExportOpen(false)} className="px-4 py-2 rounded border">Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ExportModal
+        open={exportOpen}
+        quiz={currentQuiz}
+        onClose={() => setExportOpen(false)}
+        onGenerate={(fmt) => handleExportGenerate(fmt as "json" | "txt" | "pdf")}
+      />
     </div>
   );
 }

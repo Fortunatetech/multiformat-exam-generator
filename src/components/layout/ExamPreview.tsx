@@ -25,7 +25,6 @@ export default function ExamPreview({ quiz, includeAnswers = false, className }:
   }, [quiz]);
 
   const handlePrint = () => {
-    // Simple print: open a new window with printable markup
     const w = window.open("", "_blank", "noopener,noreferrer");
     if (!w) return;
     const html = `
@@ -55,7 +54,6 @@ export default function ExamPreview({ quiz, includeAnswers = false, className }:
     `;
     w.document.write(html);
     w.document.close();
-    // give the new window a moment to render then call print
     setTimeout(() => {
       w.print();
     }, 300);
@@ -81,8 +79,8 @@ export default function ExamPreview({ quiz, includeAnswers = false, className }:
       </div>
 
       <ol className="mt-4 space-y-4 list-decimal list-inside">
-        {quiz.questions.map((q, idx) => (
-          <li key={q.id} className="bg-slate-50 p-3 rounded">
+        {quiz.questions.map((q) => (
+  <li key={q.id} className="bg-slate-50 p-3 rounded">
             <div className="text-sm font-medium">{q.prompt}</div>
             {q.choices && (
               <ul className="mt-2 space-y-1 text-sm">

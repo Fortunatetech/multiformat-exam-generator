@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { uploadFiles, getJobStatus, getQuiz, JobStatus, Quiz } from "@/lib/api";
+import { uploadFiles, getJobStatus, getQuiz, type JobStatus, type Quiz } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -20,7 +20,6 @@ export default function FileUploadCard({ accept = ".pdf,.docx,.txt,.pptx,.png,.j
   const inputRef = useRef<HTMLInputElement | null>(null);
   const pollRef = useRef<number | null>(null);
 
-  // handle file selection
   const addFiles = useCallback((files: FileList | null) => {
     if (!files) return;
     const arr = Array.from(files);
@@ -43,12 +42,51 @@ export default function FileUploadCard({ accept = ".pdf,.docx,.txt,.pptx,.png,.j
     e.currentTarget.value = "";
   }, [addFiles]);
 
-  // remove file from queue
   const removeFile = useCallback((index: number) => {
     setQueued((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  // start upload -> create job
+  // poll job status until done
+  const pollJob = useCallback((jobId: string) => {
+    // clean up any prior interval
+    if (pollRef.current) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+
+    const fetchOnce = async () => {
+      try {
+        const s = await getJobStatus(jobId);
+        setJob(s);
+        if (s.status === "done") {
+          const q = await getQuiz(jobId);
+          setQuiz(q);
+          setUploading(false);
+          if (q) onJobComplete?.(q);
+          if (pollRef.current) {
+            window.clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+        } else if (s.status === "failed") {
+          setError(s.message ?? "Job failed");
+          setUploading(false);
+          if (pollRef.current) {
+            window.clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(msg);
+        setUploading(false);
+      }
+    };
+
+    // run immediately then poll
+    fetchOnce();
+    pollRef.current = window.setInterval(fetchOnce, 800);
+  }, [onJobComplete]);
+
   const startUpload = useCallback(async () => {
     if (queued.length === 0) {
       setError("Please add at least one file to upload.");
@@ -58,50 +96,14 @@ export default function FileUploadCard({ accept = ".pdf,.docx,.txt,.pptx,.png,.j
     setUploading(true);
     try {
       const { jobId } = await uploadFiles(queued);
-      // start polling
       pollJob(jobId);
-    } catch (err: any) {
-      setError(err?.message ?? "Upload failed");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
       setUploading(false);
     }
-  }, [queued]);
+  }, [queued, pollJob]);
 
-  // Poll job status until done
-  const pollJob = useCallback(async (jobId: string) => {
-    // clear any existing poll
-    if (pollRef.current) {
-      window.clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-
-    // immediate status fetch + set interval
-    const fetchOnce = async () => {
-      const s = await getJobStatus(jobId);
-      setJob(s);
-      if (s.status === "done") {
-        const q = await getQuiz(jobId);
-        setQuiz(q);
-        setUploading(false);
-        if (q) onJobComplete?.(q);
-        if (pollRef.current) {
-          window.clearInterval(pollRef.current);
-          pollRef.current = null;
-        }
-      } else if (s.status === "failed") {
-        setError(s.message ?? "Job failed");
-        setUploading(false);
-        if (pollRef.current) {
-          window.clearInterval(pollRef.current);
-          pollRef.current = null;
-        }
-      }
-    };
-
-    await fetchOnce();
-    pollRef.current = window.setInterval(fetchOnce, 800);
-  }, [onJobComplete]);
-
-  // cleanup interval on unmount
   useEffect(() => {
     return () => {
       if (pollRef.current) {
@@ -180,7 +182,6 @@ export default function FileUploadCard({ accept = ".pdf,.docx,.txt,.pptx,.png,.j
         </div>
       )}
 
-      {/* Job progress & result preview */}
       {job && (
         <div className="mt-4">
           <div className="flex items-center justify-between">

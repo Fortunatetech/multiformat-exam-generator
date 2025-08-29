@@ -3,7 +3,7 @@
  * Lightweight mock API used by the frontend during early development.
  * - Simulates file upload -> generation job -> finished quiz result.
  *
- * This module is intentionally client-friendly (no Node-only APIs).
+ * This module is intentionally client-friendly (runs in browser).
  * Replace with real API calls once backend endpoints are available.
  */
 
@@ -14,6 +14,17 @@ export type JobStatus = {
   message?: string;
 };
 
+/**
+ * Source anchor indicates where in the source file a question was derived from.
+ * Adjust shape as backend provides richer info (page, offsets, OCR confidence, etc).
+ */
+export type SourceAnchor = {
+  page?: number;
+  start?: number;
+  end?: number;
+  text?: string;
+};
+
 export type QuizQuestion = {
   id: string;
   type: "mcq" | "tf" | "fib" | "theory";
@@ -21,6 +32,24 @@ export type QuizQuestion = {
   choices?: string[];
   answer?: string | string[];
   explanation?: string;
+
+  /** Model confidence (0..1). Optional for UI badges. */
+  confidence?: number;
+
+  /** Topic tags or areas of concentration extracted / suggested by the model */
+  tags?: string[];
+
+  /** Optional small snippet of the original source used to generate this question */
+  source?: string;
+
+  /** More precise anchors into the source (page/offset/text). */
+  sourceAnchors?: SourceAnchor[];
+
+  /**
+   * UI-only status: "pending" | "accepted" | "rejected" | "regenerated"
+   * Useful during review; backend model may use a different field later.
+   */
+  status?: "pending" | "accepted" | "rejected" | "regenerated";
 };
 
 export type Quiz = {
@@ -101,23 +130,35 @@ function buildSampleQuiz(files: File[]): Quiz {
   const questions = files.flatMap((f, idx) => {
     // create 2 questions per file as demo
     const base = `${f.name.replace(/\.[^/.]+$/, "")} — sample`;
-    return [
-      {
-        id: `q_${idx}_1`,
-        type: "mcq",
-        prompt: `Which statement about "${base}" is correct?`,
-        choices: ["Option A", "Option B", "Option C", "Option D"],
-        answer: "Option A",
-        explanation: "This is a generated example explanation.",
-      },
-      {
-        id: `q_${idx}_2`,
-        type: "tf",
-        prompt: `True or False: "${base}" is covered in the uploaded file.`,
-        answer: "True",
-        explanation: "Demo true/false question.",
-      },
-    ];
+
+    const q1: QuizQuestion = {
+      id: `q_${idx}_1`,
+      type: "mcq",
+      prompt: `Which statement about "${base}" is correct?`,
+      choices: ["Option A", "Option B", "Option C", "Option D"],
+      answer: "Option A",
+      explanation: "This is a generated example explanation.",
+      confidence: Number((0.6 + Math.random() * 0.35).toFixed(3)), // 0.6..0.95
+      tags: ["example", "topic-" + ((idx % 3) + 1)],
+      source: `Excerpt from ${f.name}: \"${base.slice(0, Math.min(60, base.length))}\"`,
+      sourceAnchors: [{ page: 1, start: 0, end: 120, text: base.slice(0, 120) }],
+      status: "pending",
+    };
+
+    const q2: QuizQuestion = {
+      id: `q_${idx}_2`,
+      type: "tf",
+      prompt: `True or False: "${base}" is covered in the uploaded file.`,
+      answer: "True",
+      explanation: "Demo true/false question.",
+      confidence: Number((0.5 + Math.random() * 0.4).toFixed(3)), // 0.5..0.9
+      tags: ["truefalse"],
+      source: `Excerpt from ${f.name}: \"${base.slice(0, Math.min(80, base.length))}\"`,
+      sourceAnchors: [{ page: 1, start: 120, end: 200, text: base.slice(120, 200) }],
+      status: "pending",
+    };
+
+    return [q1, q2];
   });
 
   return {
